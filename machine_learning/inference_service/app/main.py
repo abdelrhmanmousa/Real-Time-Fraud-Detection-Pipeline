@@ -16,6 +16,7 @@ AIP_PREDICT_ROUTE = os.environ.get('AIP_PREDICT_ROUTE', '/predict')
 async def lifespan(app: FastAPI):
     print("Application startup...")
     MODELS["xgboost"] = load_model(model_path=settings.MODEL_PATH)
+    print(f"Model {settings.MODEL_PATH} loaded successfully.")
     MODELS["loaded"] = True
     yield
     # This code runs on shutdown

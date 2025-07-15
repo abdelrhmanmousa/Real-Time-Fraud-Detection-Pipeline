@@ -3,9 +3,10 @@ import joblib
 from typing import Any, List
 
 from schemas import PredictionInput
+import utils
 
 def load_model(model_path: str) -> Any:
-    return joblib.load(model_path)
+    return utils.load_model(model_path)
 
 
 def make_predictions(input_data: PredictionInput, model_pipeline: Any) -> List[float]:
