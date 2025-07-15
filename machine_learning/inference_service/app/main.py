@@ -11,12 +11,13 @@ MODELS = {}
 
 AIP_HEALTH_ROUTE = os.environ.get('AIP_HEALTH_ROUTE', '/health')
 AIP_PREDICT_ROUTE = os.environ.get('AIP_PREDICT_ROUTE', '/predict')
+model_path = os.environ.get("MODEL_PATH")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Application startup...")
-    MODELS["xgboost"] = load_model(model_path=settings.MODEL_PATH)
-    print(f"Model {settings.MODEL_PATH} loaded successfully.")
+    MODELS["xgboost"] = load_model(model_path=model_path)
+    print(f"Model {model_path} loaded successfully.")
     MODELS["loaded"] = True
     yield
     # This code runs on shutdown
