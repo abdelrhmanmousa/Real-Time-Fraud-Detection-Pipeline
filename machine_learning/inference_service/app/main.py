@@ -11,7 +11,7 @@ MODELS = {}
 
 AIP_HEALTH_ROUTE = os.environ.get('AIP_HEALTH_ROUTE', '/health')
 AIP_PREDICT_ROUTE = os.environ.get('AIP_PREDICT_ROUTE', '/predict')
-model_path = os.environ.get("MODEL_PATH")
+model_path = os.environ.get("MODEL_PATH","model.joblib")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

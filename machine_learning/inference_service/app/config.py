@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     API_VERSION: str = "1.0.0"
 
     
-    MODEL_PATH: Path = Path("pipeline_model.joblib")
+    MODEL_PATH: Path = Path("model.joblib")
 
     LOG_LEVEL: str = "INFO"
 
