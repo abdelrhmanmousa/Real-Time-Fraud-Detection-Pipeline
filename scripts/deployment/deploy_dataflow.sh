@@ -183,7 +183,7 @@ cd "${PIPELINE_ROOT_ABS_PATH}"
   --temp_location "${TEMP_LOCATION}" \
   --subnetwork regions/us-central1/subnetworks/default \
   --ml_batch_size 100 \
-  --window_duration_seconds 20 \
+  --window_duration_seconds 300 \
   --setup_file "${SETUP_FILE_PATH}" \
   --input_topic "${INPUT_TOPIC_PATH}" \
   --output_path "${OUTPUT_PATH}" \
