@@ -13,4 +13,9 @@ setuptools.setup(
         'requests'
     ],
     packages=setuptools.find_packages(),
+    # entry_points={
+    #     'console_scripts': [
+    #         'run_pipeline=src.pipeline:main',  # REQUIRED for Flex Templates
+    #     ]
+    # }
 )

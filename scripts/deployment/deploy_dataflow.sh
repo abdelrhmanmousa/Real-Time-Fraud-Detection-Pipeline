@@ -147,7 +147,7 @@ echo ">>> Verifying and granting IAM roles...."
 
 ROLES_TO_GRANT=(
   "roles/dataflow.worker" "roles/storage.objectAdmin" "roles/pubsub.admin"
-  "roles/datastore.user" "roles/dataflow.admin" 
+  "roles/datastore.user" "roles/dataflow.admin" "roles/run.invoker"
 )
 
 for role in "${ROLES_TO_GRANT[@]}"; do
