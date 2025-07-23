@@ -1,0 +1,53 @@
+jobs:
+  pysparkJob:
+    mainPythonFileUri: gs://${GCS_BUCKET}/pyspark_jobs/${TEMPLATE_ID}/main.py
+    pythonFileUris:
+    - gs://${GCS_BUCKET}/pyspark_jobs/${TEMPLATE_ID}/etl_job.zip
+    jarFileUris:
+    - gs://spark-lib/bigquery/spark-bigquery-with-dependencies_2.12-0.29.0.jar
+    args:
+    - "--year"
+    - "YEAR_PLACEHOLDER"  # Arg index 1
+    - "--month"
+    - "MONTH_PLACEHOLDER" # Arg index 3
+    - "--day"
+    - "DAY_PLACEHOLDER"   # Arg index 5
+    - "--hour"
+    - "HOUR_PLACEHOLDER"  # Arg index 7
+  stepId: run_spark_etl
+
+placement:
+  managedCluster:
+    clusterName: ephemeral-spark-cluster
+    config:
+      gceClusterConfig:
+        serviceAccount: "${DATAPROC_SA_EMAIL}"
+        serviceAccountScopes:
+          - https://www.googleapis.com/auth/cloud-platform
+      masterConfig:
+        machineTypeUri: n2-standard-2
+        numInstances: 1
+        diskConfig:
+          bootDiskSizeGb: 100
+      workerConfig:
+        machineTypeUri: n2-standard-2
+        numInstances: 2
+        diskConfig:
+          bootDiskSizeGb: 100
+      softwareConfig:
+        imageVersion: 2.1-debian11
+
+# Parameters section with corrected names and field paths
+parameters:
+- name: YEAR
+  fields:
+  - jobs['run_spark_etl'].pysparkJob.args[1] # Maps to the second argument
+- name: MONTH
+  fields:
+  - jobs['run_spark_etl'].pysparkJob.args[3] # Maps to the fourth argument
+- name: DAY
+  fields:
+  - jobs['run_spark_etl'].pysparkJob.args[5] # Maps to the sixth argument
+- name: HOUR
+  fields:
+  - jobs['run_spark_etl'].pysparkJob.args[7] # Maps to the eighth argument

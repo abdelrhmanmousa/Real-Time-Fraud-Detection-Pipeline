@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession, DataFrame
-from config import Settings
-from schema import raw_transactions_schema
+from .config import Settings
+from .schema import raw_transactions_schema
 
 def read_partitioned_data(spark: SparkSession, full_input_path: str) -> DataFrame:
     """Reads partitioned Parquet data from a fully specified GCS path."""

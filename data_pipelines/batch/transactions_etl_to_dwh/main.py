@@ -1,9 +1,9 @@
 import os
 import argparse
 from pyspark.sql import SparkSession
-from config import Settings, PIPELINE_MODE
-import io_utils as pipeline_io
-import transforms
+from transactions_etl.config import Settings, PIPELINE_MODE
+import transactions_etl.io_utils as pipeline_io
+import transactions_etl.transforms as transforms
 
 
 def get_spark_session():

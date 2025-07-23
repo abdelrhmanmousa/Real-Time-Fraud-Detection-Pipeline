@@ -53,7 +53,7 @@ def enrich_with_dimensions(transactions_df: DataFrame, dims: dict) -> DataFrame:
     # Prepare date and time keys for joining
     df_with_join_keys = transactions_df \
         .withColumn("Date_Join_Key", date_format(to_date(col("timestamp")), "yyyyMMdd").cast("integer")) \
-        .withColumn("Time_Join_Key", date_format(col("timestamp"), "HHmmss"))
+        .withColumn("Time_Join_Key", date_format(col("timestamp"), "HHmmss").cast("integer"))
 
     # Join with dimension tables. Using broadcast for smaller tables is a key optimization.
     enriched_df = df_with_join_keys \
