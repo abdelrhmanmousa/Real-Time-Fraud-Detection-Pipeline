@@ -16,6 +16,8 @@ __pycache__/
 # Wandb metadata
 wandb/
 
+.terraform/
+
 # Distribution / packaging
 .Python
 build/
