@@ -1,78 +1,117 @@
 from pyspark.sql import DataFrame
-from pyspark.sql.functions import col, when, trim, to_date, date_format, broadcast, xxhash64
+from pyspark.sql import functions as F
+from pyspark.sql.functions import (
+    col,
+    when,
+    trim,
+    to_date,
+    to_timestamp,
+    date_format,
+    broadcast,
+    xxhash64,
+)
+
 
 def clean_transaction_data(df: DataFrame) -> DataFrame:
     """
     Performs comprehensive cleaning of the raw transaction data.
     """
     print("Performing comprehensive data cleaning...")
-    
+
     # 1. Handle Nulls & Duplicates
     # Drop records with null critical identifiers, as they cannot be joined.
     # Also, remove duplicate transactions.
     cleaned_df = df.filter(
-        col("transaction_id").isNotNull() &
-        col("user_id").isNotNull() &
-        col("card_id").isNotNull() &
-        col("merchant_id").isNotNull()
-    ).dropDuplicates(['transaction_id'])
+        col("transaction_id").isNotNull()
+        & col("user_id").isNotNull()
+        & col("card_id").isNotNull()
+        & col("merchant_id").isNotNull()
+    ).dropDuplicates(["transaction_id"])
 
     # 2. String Cleaning
     # Trim whitespace from identifiers to prevent join failures.
-    cleaned_df = cleaned_df.withColumn("user_id", trim(col("user_id"))) \
-                           .withColumn("card_id", trim(col("card_id"))) \
-                           .withColumn("device_id", trim(col("device_id"))) \
-                           .withColumn("merchant_id", trim(col("merchant_id")))
+    cleaned_df = (
+        cleaned_df.withColumn("user_id", trim(col("user_id")))
+        .withColumn("card_id", trim(col("card_id")))
+        .withColumn("device_id", trim(col("device_id")))
+        .withColumn("merchant_id", trim(col("merchant_id")))
+    )
 
     # 3. Value Validation & Correction
     # Ensure transaction amount is not negative.
     # Fill nulls for key numeric/boolean fields with sensible defaults.
+    
+    # These problems should never occur, however, it's added for convinience.
     cleaned_df = cleaned_df.withColumn(
         "amount", when(col("amount") < 0, 0).otherwise(col("amount"))
-    ).fillna({
-        'amount': 0.0,
-        'time_since_last_user_transaction_s': 0.0,
-        'distance_from_home_km': 0.0,
-        'account_balance_before_tx': 0.0,
-        'is_weekend_transaction': False,
-        'is_night_transaction': False,
-        'is_geo_ip_mismatch': False,
-        'is_foreign_country_tx': False,
-        'is_new_device': False,
-        'was_3ds_successful': False
-    })
-    
+    ).fillna(
+        {
+            "amount": 0.0,
+            "time_since_last_user_transaction_s": 0.0,
+            "distance_from_home_km": 0.0,
+            "account_balance_before_tx": 0.0,
+            "is_weekend_transaction": False,
+            "is_night_transaction": False,
+            "is_geo_ip_mismatch": False,
+            "is_foreign_country_tx": False,
+            "is_new_device": False,
+            "was_3ds_successful": False,
+        }
+    )
+
     return cleaned_df
+
 
 def enrich_with_dimensions(transactions_df: DataFrame, dims: dict) -> DataFrame:
     """
     Enriches transaction data with primary dimension surrogate keys.
     """
     print("Enriching data with primary dimension keys...")
-    
+
     # Prepare date and time keys for joining
-    df_with_join_keys = transactions_df \
-        .withColumn("Date_Join_Key", date_format(to_date(col("timestamp")), "yyyyMMdd").cast("integer")) \
-        .withColumn("Time_Join_Key", date_format(col("timestamp"), "HHmmss").cast("integer"))
+    df_with_join_keys = transactions_df.withColumn(
+        "Date_Join_Key",
+        date_format(to_date(col("timestamp")), "yyyyMMdd").cast("integer"),
+    )
+
+    df_with_join_keys = df_with_join_keys.withColumn(
+        "Time_Join_Key",
+        F.hour(to_timestamp(col("timestamp"))) * 3600 + F.minute(to_timestamp(col("timestamp"))) * 60 + F.second(to_timestamp(col("timestamp"))),
+    )
 
     # Join with dimension tables. Using broadcast for smaller tables is a key optimization.
-    enriched_df = df_with_join_keys \
-        .join(broadcast(dims['users']), "user_id", "left") \
-        .join(broadcast(dims['cards']), "card_id", "left") \
-        .join(broadcast(dims['merchants']), "merchant_id", "left") \
-        .join(broadcast(dims['devices']), "device_id", "left") \
-        .join(broadcast(dims['date']), col("Date_Join_Key") == dims['date']['Date_SK'], "left") \
-        .join(broadcast(dims['time']), col("Time_Join_Key") == dims['time']['Time_SK'], "left") \
-        .join(broadcast(dims['flags']), [
-            transactions_df.is_weekend_transaction == dims['flags'].is_weekend,
-            transactions_df.is_night_transaction == dims['flags'].is_night,
-            transactions_df.is_geo_ip_mismatch == dims['flags'].is_geo_ip_mismatch,
-            transactions_df.is_foreign_country_tx == dims['flags'].is_foreign_country,
-            transactions_df.is_new_device == dims['flags'].is_new_device,
-            transactions_df.was_3ds_successful == dims['flags'].was_3ds_successful
-        ], "left")
-        
+    enriched_df = (
+        df_with_join_keys.join(broadcast(dims["users"]), "user_id", "left")
+        .join(broadcast(dims["cards"]), "card_id", "left")
+        .join(broadcast(dims["merchants"]), "merchant_id", "left")
+        .join(broadcast(dims["devices"]), "device_id", "left")
+        .join(
+            broadcast(dims["date"]),
+            col("Date_Join_Key") == dims["date"]["Date_SK"],
+            "left",
+        )
+        .join(
+            broadcast(dims["time"]),
+            col("Time_Join_Key") == dims["time"]["Time_SK"],
+            "left",
+        )
+        .join(
+            broadcast(dims["flags"]),
+            [
+                transactions_df.is_weekend_transaction == dims["flags"].is_weekend,
+                transactions_df.is_night_transaction == dims["flags"].is_night,
+                transactions_df.is_geo_ip_mismatch == dims["flags"].is_geo_ip_mismatch,
+                transactions_df.is_foreign_country_tx
+                == dims["flags"].is_foreign_country,
+                transactions_df.is_new_device == dims["flags"].is_new_device,
+                transactions_df.was_3ds_successful == dims["flags"].was_3ds_successful,
+            ],
+            "left",
+        )
+    )
+
     return enriched_df
+
 
 def select_and_rename_for_fact(df: DataFrame) -> DataFrame:
     """Selects and renames columns to match the final fact table schema, incorporating the junk dimension."""
@@ -102,5 +141,5 @@ def select_and_rename_for_fact(df: DataFrame) -> DataFrame:
         "user_failed_tx_count_1h",
         "user_num_distinct_mcc_24h",
         "tx_amount_vs_user_avg_ratio",
-        "is_fraud_prediction"
+        "is_fraud_prediction",
     ).withColumn("Transaction_SK", xxhash64(col("transaction_id")))
