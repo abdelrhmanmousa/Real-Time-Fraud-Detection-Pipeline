@@ -21,3 +21,4 @@ if __name__ == "__main__":
         logging.info("Pipeline finished.")
     else:
         logging.info("Pipeline is now running in streaming mode on the selected runner.")
+        result.wait_until_finish()
