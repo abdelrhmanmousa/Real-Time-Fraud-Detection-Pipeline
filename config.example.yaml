@@ -1,0 +1,20 @@
+# Configuration for deployment
+GCP_PROJECT_ID: ""
+GCP_REGION: ""
+
+# Dataflow
+DATAFLOW_GCS_OUTPUT_BUCKET: ""
+DATAFLOW_GCS_DLQ_BUCKET: ""
+DATAFLOW_INPUT_TOPIC_ID: ""
+DATAFLOW_ML_MODEL_ENDPOINT_URL: ""
+DATAFLOW_JOB_SOURCE_DIR: "data_pipelines/streaming"
+
+# Dataproc
+DATAPROC_GCS_BUCKET: ""
+DATAPROC_WORKFLOW_TEMPLATE_ID: ""
+DATAPROC_WORKFLOW_TEMPLATE_YAML_PATH: "templates/transactions_etl_workflow.yaml"
+DATAPROC_JOB_SOURCE_DIR: "data_pipelines/batch/transactions_etl_to_dwh"
+
+# ML Service
+ML_SERVICE_NAME: ""
+ML_SERVICE_MODEL_PATH_IN_GCS: ""

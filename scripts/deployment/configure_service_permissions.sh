@@ -2,14 +2,14 @@ set -e
 set -u
 
 usage() {
-  echo "Usage: $0 --project-id <ID> --service <dataproc|dataflow>"
+  echo "Usage: $0 --project-id <ID> --service <dataproc|dataflow|ml-service>"
   echo "  Deploys permissions for a well-defined service by enforcing a naming convention."
   exit 1
 }
 
 # Arg Parsing
-PROJECT_ID=""
-SERVICE_TYPE=""
+PROJECT_ID="${PROJECT_ID:-}"
+SERVICE_TYPE="${SERVICE_TYPE:-}"
 while [[ "$#" -gt 0 ]]; do
   case $1 in
     --project-id) PROJECT_ID="$2"; shift ;;
@@ -36,8 +36,14 @@ elif [[ "${SERVICE_TYPE}" == "dataflow" ]]; then
     "roles/dataflow.admin" "roles/dataflow.worker" "roles/storage.objectAdmin"
     "roles/pubsub.admin" "roles/datastore.user" "roles/run.invoker"
   )
+elif [[ "${SERVICE_TYPE}" == "ml-service" ]]; then
+  SA_NAME="cloud-run-ml-sa"
+  SA_DISPLAY_NAME="Cloud Run ML Service Identity"
+  ROLES_TO_GRANT=(
+    "roles/storage.objectViewer"
+  )
 else
-  echo "ERROR: Invalid service type '${SERVICE_TYPE}'. Must be 'dataproc' or 'dataflow'."
+  echo "ERROR: Invalid service type '${SERVICE_TYPE}'. Must be 'dataproc', 'dataflow', or 'ml-service'."
   exit 1
 fi
 

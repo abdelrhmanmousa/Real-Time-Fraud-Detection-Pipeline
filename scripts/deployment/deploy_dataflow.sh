@@ -3,8 +3,8 @@ set -u
 set -o pipefail
 
 # Default Values
-REGION="us-central1"
-IS_UPDATE="false"
+REGION="${GCP_REGION:-us-central1}"
+IS_UPDATE="${IS_UPDATE:-false}"
 
 # help
 usage() {
@@ -27,6 +27,15 @@ usage() {
 }
 
 # Parsing args
+GCP_PROJECT_ID="${GCP_PROJECT_ID:-}"
+GCS_OUTPUT_BUCKET="${DATAFLOW_GCS_OUTPUT_BUCKET:-}"
+GCS_DLQ_BUCKET="${DATAFLOW_GCS_DLQ_BUCKET:-}"
+INPUT_TOPIC_ID="${DATAFLOW_INPUT_TOPIC_ID:-}"
+MODEL_ENDPOINT_URL="${DATAFLOW_ML_MODEL_ENDPOINT_URL:-}"
+JOB_SOURCE_DIR="${DATAFLOW_JOB_SOURCE_DIR:-}"
+SERVICE_ACCOUNT_NAME="${SERVICE_ACCOUNT_NAME:-}"
+EXISTING_JOB_NAME_TO_UPDATE="${EXISTING_JOB_NAME_TO_UPDATE:-}"
+
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         --project-id) GCP_PROJECT_ID="$2"; shift ;;
@@ -34,7 +43,7 @@ while [[ "$#" -gt 0 ]]; do
         --gcs-dlq-bucket) GCS_DLQ_BUCKET="$2"; shift ;;
         --topic-id) INPUT_TOPIC_ID="$2"; shift ;;
         --model-url) MODEL_ENDPOINT_URL="$2"; shift ;;
-        --job-source-dir) JOB_SOURCE_DIR="$2"; shift ;; # <<< MODIFIED: New argument
+        --job-source-dir) JOB_SOURCE_DIR="$2"; shift ;;
         --region) REGION="$2"; shift ;;
         --sa-name) SERVICE_ACCOUNT_NAME="$2"; shift ;;
         --update) IS_UPDATE="true" ;;
