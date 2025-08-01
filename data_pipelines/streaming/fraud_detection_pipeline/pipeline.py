@@ -143,6 +143,7 @@ class FraudDetectionPipelineOptions(PipelineOptions):
         parser.add_argument("--window_duration_seconds", type=int, default=20, help="Window duration (s).")
         parser.add_argument("--allowed_lateness_seconds", type=int, default=60, help="Allowed lateness (s).")
         parser.add_argument("--ml_batch_size", type=int, default=50, help="Batch size for ML.")
+        parser.add_argument("--allowed_wait_time_seconds", type=int, default=2, help="Allowed wait time for ML batching.")
         parser.add_argument("--ml_batch_max_size", type=int, default=100, help="Max batch size for ML.")
         parser.add_argument("--use_emulator", action='store_true', default=False, help="Use a local Firestore emulator.")
         parser.add_argument("--emulator_host", required=False, help="The host:port for a local Firestore emulator (e.g., 'localhost:8080').")
@@ -204,7 +205,7 @@ def build(options: FraudDetectionPipelineOptions):
     prediction_results = (
         parsed_transactions
         | "KeyForML" >> beam.Map(lambda e: ("batch", e))
-        | "BatchForML" >> beam.GroupIntoBatches(options.ml_batch_size, options.ml_batch_max_size)
+        | "BatchForML" >> beam.GroupIntoBatches(options.ml_batch_size, options.allowed_wait_time_seconds)
         | "RunMLInference" >> beam.ParDo(
             transforms.PredictFraudBatchDoFn(
                 endpoint_url=options.model_endpoint_url,

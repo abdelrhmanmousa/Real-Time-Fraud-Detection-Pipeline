@@ -133,11 +133,17 @@ class PredictFraudBatchDoFn(beam.DoFn):
         for tx in transaction_batch:
             user_data = users_data.get(tx.get("user_id"))
             merchant_data = merchants_data.get(tx.get("merchant_id"))
+            
+            if not merchant_data:
+                logging.warning(f"Skipping transaction {tx.get('transaction_id')} due to missing merchant data.")
+                continue 
 
-            if not user_data or not merchant_data:
-                logging.warning(f"Skipping transaction {tx.get('transaction_id')} due to missing user/merchant data.")
+            if not user_data:
+                logging.warning(f"Skipping transaction {tx.get('transaction_id')} due to missing user data.")
+                logging.info(tx)
                 continue  # Or yield to a separate "failed_enrichment" output
 
+            
             # Pass a copy of user_data to prevent mutation issues within the batch
             enriched_tx = self._enrich_transaction(tx, user_data.copy(), merchant_data)
             enriched_transactions.append(enriched_tx)
@@ -150,7 +156,7 @@ class PredictFraudBatchDoFn(beam.DoFn):
         try:
             # Sanitize datetime objects to ISO strings for JSON serialization
             sanitized_batch_for_api = [self._sanitize_for_json(tx) for tx in enriched_transactions]
-            
+            # logging.info(sanitized_batch_for_api[0])
             payload = {"transactions": sanitized_batch_for_api} # Common API format
             
             response = self._session.post(self._endpoint_url, json=payload, timeout=30)
@@ -160,6 +166,11 @@ class PredictFraudBatchDoFn(beam.DoFn):
             predictions_map = {pred.get("transaction_id"): pred for pred in predictions}
             logging.info(f"Successfully received {len(predictions)} predictions from model server.")
 
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
             # 5. Merge predictions and yield results
             for transaction in enriched_transactions:
                 tx_id = transaction.get("transaction_id")
@@ -177,6 +188,10 @@ class PredictFraudBatchDoFn(beam.DoFn):
 
         except requests.exceptions.RequestException as e:
             logging.error(f"HTTP request to model server failed after retries: {e}")
+            with open("error.txt","w") as f:
+                json.dump(sanitized_batch_for_api, f)
+
+            logging.info(sanitized_batch_for_api)
             yield beam.pvalue.TaggedOutput(failed_processing_tag, transaction_batch)
         except Exception as e:
             logging.error(f"An unexpected error occurred in PredictFraudBatchDoFn: {e}", exc_info=True)
@@ -199,7 +214,11 @@ class PredictFraudBatchDoFn(beam.DoFn):
         
         if last_tx_ts:
             # CORRECT: Calculate delta between event timestamps using total_seconds()
-            geo_time_data["time_since_last_user_transaction_s"] = (timestamp - last_tx_ts).total_seconds()
+            time_s = (timestamp - last_tx_ts).total_seconds()
+            geo_time_data["time_since_last_user_transaction_s"] = time_s if time_s > 0 else 0
+
+        else:
+            geo_time_data["time_since_last_user_transaction_s"] = 9999999
 
         geo_time_data["is_geo_ip_mismatch"] = tx.get("ip_country") != merchant_data.get("country_code")
         geo_time_data["is_foreign_country_tx"] = tx.get("ip_country") != user_data.get("user_home_country")
@@ -211,7 +230,7 @@ class PredictFraudBatchDoFn(beam.DoFn):
         balance = user_data.get("account_balance_before_tx", 0)
         user_avg = user_data.get("user_avg_tx_amount_30d", 0)
         user_data["tx_amount_to_balance_ratio"] = (tx["amount"] / balance) if balance > 0 else 0
-        user_data["tx_amount_vs_user_avg_ratio"] = (tx["amount"] / user_avg) if user_avg > 0 else 0
+        user_data["tx_amount_vs_user_avg_ratio"] = (tx["amount"] / user_avg) if user_avg > 0 else 1
 
         # --- Device and Card Features ---
         # SAFE: Use .get() to avoid mutating user_data with .pop()
@@ -223,7 +242,20 @@ class PredictFraudBatchDoFn(beam.DoFn):
             if card.get("card_id") == tx.get("card_id"):
                 card_data = card
                 break
-        
+        if not card_data: #This handles the case of not finding cards for the user, the model would impute these values.
+            card_data["card_type"] = "Not Fount"
+            card_data["card_brand"] = "Not Fount"
+            card_data["card_country"] = "Not Fount"
+            card_data["card_brand"] = "Not Fount"
+            card_data["issuing_bank"] = "Not Fount"
+            logging.info("==================================")
+            logging.info("==================================")
+            logging.info("==================================")
+            logging.info("==================================")
+            logging.info(user_data)
+            logging.info("==================================")
+            logging.info("==================================")
+            logging.info("==================================")
         # Clean up data before merging to avoid redundant or sensitive fields
         user_data.pop("cards", None)
         user_data.pop("devices", None)
