@@ -15,6 +15,11 @@ from .utils import FirestoreManager, UpdateOperation
 main_output_tag = 'parsed_transactions'
 failed_parse_tag = 'failed_parses'
 failed_processing_tag = 'failed_batches'
+# model_422_tag = os.path.join(failed_processing_tag, "model_422")
+# failed_request_tag = os.path.join(failed_processing_tag, "failed_request")
+# merchant_not_found_tag = os.path.join(failed_processing_tag, "merchant_not_found")
+# user_not_found_tag = os.path.join(failed_processing_tag, "user_not_found")
+
 
 
 class ParseAndTimestampDoFn(beam.DoFn):
@@ -133,11 +138,18 @@ class PredictFraudBatchDoFn(beam.DoFn):
         for tx in transaction_batch:
             user_data = users_data.get(tx.get("user_id"))
             merchant_data = merchants_data.get(tx.get("merchant_id"))
+            
+            if not merchant_data:
+                logging.warning(f"Skipping transaction {tx.get('transaction_id')} due to missing merchant data. It will be written to the DLQ.")
+                yield beam.pvalue.TaggedOutput(failed_processing_tag, {"no_merchant":tx})
+                continue 
 
-            if not user_data or not merchant_data:
-                logging.warning(f"Skipping transaction {tx.get('transaction_id')} due to missing user/merchant data.")
-                continue  # Or yield to a separate "failed_enrichment" output
+            if not user_data:
+                logging.warning(f"Skipping transaction {tx.get('transaction_id')} due to missing user data. It will be written to the DLQ.")
+                yield beam.pvalue.TaggedOutput(failed_processing_tag, {"no_user":tx})
+                continue
 
+            
             # Pass a copy of user_data to prevent mutation issues within the batch
             enriched_tx = self._enrich_transaction(tx, user_data.copy(), merchant_data)
             enriched_transactions.append(enriched_tx)
@@ -150,16 +162,22 @@ class PredictFraudBatchDoFn(beam.DoFn):
         try:
             # Sanitize datetime objects to ISO strings for JSON serialization
             sanitized_batch_for_api = [self._sanitize_for_json(tx) for tx in enriched_transactions]
-            
+            # logging.info(sanitized_batch_for_api[0])
             payload = {"transactions": sanitized_batch_for_api} # Common API format
             
             response = self._session.post(self._endpoint_url, json=payload, timeout=30)
             response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
             
             predictions = response.json().get("predictions", [])
+            
             predictions_map = {pred.get("transaction_id"): pred for pred in predictions}
             logging.info(f"Successfully received {len(predictions)} predictions from model server.")
 
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
+            logging.info("Reached the point after prediction !")
             # 5. Merge predictions and yield results
             for transaction in enriched_transactions:
                 tx_id = transaction.get("transaction_id")
@@ -177,10 +195,13 @@ class PredictFraudBatchDoFn(beam.DoFn):
 
         except requests.exceptions.RequestException as e:
             logging.error(f"HTTP request to model server failed after retries: {e}")
-            yield beam.pvalue.TaggedOutput(failed_processing_tag, transaction_batch)
+            if response.status_code == 422:
+                yield beam.pvalue.TaggedOutput(failed_processing_tag, {"model_422":transaction_batch, "details": str(response.content)})
+            else:
+                yield beam.pvalue.TaggedOutput(failed_processing_tag, {"request_failed":transaction_batch,"details": str(response.content)})
         except Exception as e:
             logging.error(f"An unexpected error occurred in PredictFraudBatchDoFn: {e}", exc_info=True)
-            yield beam.pvalue.TaggedOutput(failed_processing_tag, transaction_batch)
+            yield beam.pvalue.TaggedOutput(failed_processing_tag, {"request_failed":transaction_batch})
 
     def _enrich_transaction(self, tx: Dict, user_data: Dict, merchant_data: Dict) -> Dict:
         """Enriches a single transaction with derived features. This function is now safe from side effects."""
@@ -199,7 +220,11 @@ class PredictFraudBatchDoFn(beam.DoFn):
         
         if last_tx_ts:
             # CORRECT: Calculate delta between event timestamps using total_seconds()
-            geo_time_data["time_since_last_user_transaction_s"] = (timestamp - last_tx_ts).total_seconds()
+            time_s = (timestamp - last_tx_ts).total_seconds()
+            geo_time_data["time_since_last_user_transaction_s"] = time_s if time_s > 0 else 0
+
+        else:
+            geo_time_data["time_since_last_user_transaction_s"] = 9999999
 
         geo_time_data["is_geo_ip_mismatch"] = tx.get("ip_country") != merchant_data.get("country_code")
         geo_time_data["is_foreign_country_tx"] = tx.get("ip_country") != user_data.get("user_home_country")
@@ -211,7 +236,7 @@ class PredictFraudBatchDoFn(beam.DoFn):
         balance = user_data.get("account_balance_before_tx", 0)
         user_avg = user_data.get("user_avg_tx_amount_30d", 0)
         user_data["tx_amount_to_balance_ratio"] = (tx["amount"] / balance) if balance > 0 else 0
-        user_data["tx_amount_vs_user_avg_ratio"] = (tx["amount"] / user_avg) if user_avg > 0 else 0
+        user_data["tx_amount_vs_user_avg_ratio"] = (tx["amount"] / user_avg) if user_avg > 0 else 1
 
         # --- Device and Card Features ---
         # SAFE: Use .get() to avoid mutating user_data with .pop()
@@ -223,7 +248,12 @@ class PredictFraudBatchDoFn(beam.DoFn):
             if card.get("card_id") == tx.get("card_id"):
                 card_data = card
                 break
-        
+        if not card_data: #This handles the case of not finding cards for the user, the model would impute these values.
+            card_data["card_type"] = "Not Fount"
+            card_data["card_brand"] = "Not Fount"
+            card_data["card_country"] = "Not Fount"
+            card_data["card_brand"] = "Not Fount"
+            card_data["issuing_bank"] = "Not Fount"
         # Clean up data before merging to avoid redundant or sensitive fields
         user_data.pop("cards", None)
         user_data.pop("devices", None)
@@ -246,14 +276,8 @@ class PredictFraudBatchDoFn(beam.DoFn):
             if user_id not in latest_user_tx or current_ts > latest_user_tx[user_id]:
                 latest_user_tx[user_id] = current_ts
         
-        # Create Firestore update operations. This assumes your utility can handle
-        # a dictionary specifying the fields to update.
-        # write_ops = []
+        
         data = [{"user_id":user_id,"last_transaction_timestamp": ts} for user_id, ts in latest_user_tx.items()]
-        # for user_id, ts in latest_user_tx.items():
-        #     data
-        #     op = UpdateOperation(doc_ref=user_id, data={"last_transaction_timestamp": ts})
-        #     write_ops.append(op)
 
         write_ops = self.fs_manager.create_batch_update_operations_from_list(
             "users",

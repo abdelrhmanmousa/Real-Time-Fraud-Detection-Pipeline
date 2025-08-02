@@ -1,0 +1,4 @@
+apache-airflow-providers-google==16.1.0
+google-cloud-firestore
+google-cloud-storage
+google-cloud-bigquery
