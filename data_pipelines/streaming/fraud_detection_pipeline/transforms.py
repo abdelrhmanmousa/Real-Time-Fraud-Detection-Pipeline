@@ -1,4 +1,5 @@
 import os
+import random
 import json
 import logging
 from datetime import datetime, timezone
@@ -15,6 +16,7 @@ from .utils import FirestoreManager, UpdateOperation
 main_output_tag = 'parsed_transactions'
 failed_parse_tag = 'failed_parses'
 failed_processing_tag = 'failed_batches'
+failed_format_tag = 'failed_formats'
 # model_422_tag = os.path.join(failed_processing_tag, "model_422")
 # failed_request_tag = os.path.join(failed_processing_tag, "failed_request")
 # merchant_not_found_tag = os.path.join(failed_processing_tag, "merchant_not_found")
@@ -173,11 +175,6 @@ class PredictFraudBatchDoFn(beam.DoFn):
             predictions_map = {pred.get("transaction_id"): pred for pred in predictions}
             logging.info(f"Successfully received {len(predictions)} predictions from model server.")
 
-            logging.info("Reached the point after prediction !")
-            logging.info("Reached the point after prediction !")
-            logging.info("Reached the point after prediction !")
-            logging.info("Reached the point after prediction !")
-            logging.info("Reached the point after prediction !")
             # 5. Merge predictions and yield results
             for transaction in enriched_transactions:
                 tx_id = transaction.get("transaction_id")
@@ -317,3 +314,89 @@ class AttachEventTimestampDoFn(beam.DoFn):
             # This could also be routed to another dead-letter queue.
             logging.warning(f"Element missing valid datetime object for timestamping: {element.get('transaction_id')}")
             yield element
+
+
+class AddRandomKey(beam.DoFn):
+    """
+    A DoFn to fan out the key space by assigning a random integer key.
+    This helps prevent "hot key" bottlenecks in downstream grouping operations.
+    """
+    def __init__(self, num_keys: int):
+        if num_keys <= 0:
+            raise ValueError("Number of keys must be a positive integer.")
+        self._num_keys = num_keys
+
+    def process(self, element: Any):
+        """
+        Assigns a random key from 0 to num_keys-1.
+
+        Yields:
+            A tuple of (random_key, element).
+        """
+        key = random.randint(0, self._num_keys - 1)
+        yield (key, element)
+
+
+
+class FormatForPubSubDoFn(beam.DoFn):
+    """
+    A DoFn that transforms a transaction element into a clean dictionary,
+    ensuring it matches the destination schema.
+
+    It validates data types, handles missing values, and converts datetimes.
+    Elements that fail formatting can be routed to a dead-letter output.
+    """
+    def process(self, element: dict):
+        try:
+            timestamp = element.get("timestamp")
+        
+        # This creates the clean, final dictionary
+            formatted_element = {
+                "transaction_id": str(element.get("transaction_id", "")),
+                "timestamp": timestamp.isoformat() if isinstance(timestamp, datetime) else None,
+                "amount": float(element.get("amount", 0.0)),
+                "currency": str(element.get("currency", "")),
+                "country_code": str(element.get("country_code", "")),
+                "entry_mode": str(element.get("entry_mode", "")),
+                "merchant_id": str(element.get("merchant_id", "")),
+                "merchant_category": str(element.get("merchant_category", "")),
+                "merchant_lat": float(element.get("merchant_lat", 0.0)),
+                "merchant_lon": float(element.get("merchant_lon", 0.0)),
+                "user_id": str(element.get("user_id", "")),
+                "user_account_age_days": int(element.get("user_account_age_days", 0)),
+                "card_id": str(element.get("card_id", "")),
+                "card_type": str(element.get("card_type", "")),
+                "card_country": str(element.get("card_country", "")),
+                "card_brand": str(element.get("card_brand", "")),
+                "issuing_bank": str(element.get("issuing_bank", "")),
+                "ip_address": str(element.get("ip_address", "")),
+                "ip_lat": float(element.get("ip_lat", 0.0)),
+                "ip_lon": float(element.get("ip_lon", 0.0)),
+                "device_id": str(element.get("device_id", "")),
+                "is_weekend_transaction": bool(element.get("is_weekend_transaction", False)),
+                "is_night_transaction": bool(element.get("is_night_transaction", False)),
+                "time_since_last_user_transaction_s": float(element.get("time_since_last_user_transaction_s", 0.0)),
+                "distance_from_home_km": float(element.get("distance_from_home_km", 0.0)),
+                "is_geo_ip_mismatch": bool(element.get("is_geo_ip_mismatch", False)),
+                "is_foreign_country_tx": bool(element.get("is_foreign_country_tx", False)),
+                "user_avg_tx_amount_30d": float(element.get("user_avg_tx_amount_30d", 0.0)),
+                "account_balance_before_tx": float(element.get("account_balance_before_tx", 0.0)),
+                "tx_amount_to_balance_ratio": float(element.get("tx_amount_to_balance_ratio", 0.0)),
+                "user_max_distance_from_home_90d": float(element.get("user_max_distance_from_home_90d", 0.0)),
+                "user_num_distinct_countries_6m": int(element.get("user_num_distinct_countries_6m", 0)),
+                "user_tx_count_24h": int(element.get("user_tx_count_24h", 0)),
+                "user_failed_tx_count_1h": int(element.get("user_failed_tx_count_1h", 0)),
+                "user_num_distinct_mcc_24h": int(element.get("user_num_distinct_mcc_24h", 0)),
+                "is_new_device": bool(element.get("is_new_device", False)),
+                "was_3ds_successful": bool(element.get("was_3ds_successful", False)),
+                "tx_amount_vs_user_avg_ratio": float(element.get("tx_amount_vs_user_avg_ratio", 0.0)),
+                "is_fraud_prediction": float(element.get("is_fraud_prediction", 0.0)),
+                "processing_timestamp": str(element.get("processing_timestamp", "")),
+                "partition_key": str(element.get("partition_key", ""))
+            }
+            yield formatted_element
+
+        except Exception as e:
+            # For robust error handling, emit the failed original element to a side output
+            logging.error(f"Failed to format element for Pub/Sub. Error: {e}. Element: {element}")
+            yield beam.pvalue.TaggedOutput(failed_format_tag, str(element)) # Convert to string for DLQ

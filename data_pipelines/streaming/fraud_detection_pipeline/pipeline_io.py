@@ -1,65 +1,157 @@
+# import os
+# import logging
+# import uuid
+
+# import apache_beam as beam
+# import threading
+# import pyarrow as pa
+# import pyarrow.parquet as pq
+# from apache_beam.io.gcp import gcsio
+
+
+
+# class WriteWindowedBatchToGCS(beam.DoFn):
+#     """Writes a windowed batch of records to a partitioned Parquet file in GCS."""
+
+#     _gcs_client = None
+#     _client_lock = threading.Lock()
+
+#     def __init__(self, base_path: str, schema: pa.Schema, use_emulator:bool = False):
+#         self._base_path = base_path
+#         self._schema = schema
+#         self._use_emulator = use_emulator
+
+#     def setup(self):
+#         # Initialize client once per worker (not per bundle)
+#         if "STORAGE_EMULATOR_HOST" in os.environ:
+#             del os.environ["STORAGE_EMULATOR_HOST"]
+#         with WriteWindowedBatchToGCS._client_lock:
+#             if WriteWindowedBatchToGCS._gcs_client is None:
+#                 if self._use_emulator:
+#                     # For emulator use
+#                     WriteWindowedBatchToGCS._gcs_client = gcsio.GcsIO(
+#                         client_options={"api_endpoint": "http://localhost:4443"}
+#                     )
+#                 else:
+#                     # For production GCS
+#                     WriteWindowedBatchToGCS._gcs_client = gcsio.GcsIO()
+
+#     def process(
+#         self, element: tuple, window=beam.DoFn.WindowParam
+#     ):
+#         key, records_iterable = element
+#         records_list = list(records_iterable)
+
+#         if not records_list:
+#             return
+
+#         window_end = window.end.to_utc_datetime() # We use the end time stamp to make sure that no data is written to a directory at the same time it is being worked on by spark.
+#         partition_path = f"year={window_end.year}/month={window_end.month:02d}/day={window_end.day:02d}/hour={window_end.hour:02d}"
+#         full_path = f"{self._base_path.rstrip('/')}/{partition_path}/data-{uuid.uuid4()}.parquet"
+
+#         logging.info(
+#             f"Writing {len(records_list)} records for window {window_end} to {full_path}"
+#         )
+#         try:
+#             table = pa.Table.from_pylist(records_list, schema=self._schema)
+#             buf = pa.BufferOutputStream()
+#             pq.write_table(table, buf)
+#             parquet_data = buf.getvalue().to_pybytes()
+#             with WriteWindowedBatchToGCS._gcs_client.open(full_path, "wb") as f:
+#                 f.write(parquet_data)
+
+#             logging.info(f"Successfully wrote to {full_path}")
+#         except Exception as e:
+#             logging.error(f"Failed to write Parquet file to {full_path}: {e}")
+
+
 import os
 import logging
 import uuid
+import json # Import json for the dead-letter queue
 
 import apache_beam as beam
-import threading
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 from apache_beam.io.gcp import gcsio
 
+# --- BEST PRACTICE --- Define a tag for failed writes
+failed_gcs_write_tag = 'failed_gcs_writes'
 
 
 class WriteWindowedBatchToGCS(beam.DoFn):
-    """Writes a windowed batch of records to a partitioned Parquet file in GCS."""
-
-    _gcs_client = None
-    _client_lock = threading.Lock()
+    """
+    Writes a windowed batch of records to a partitioned Parquet file in GCS.
+    This DoFn is designed to be run in parallel, with each instance handling a
+    subset of the total data for a window.
+    """
+    
 
     def __init__(self, base_path: str, schema: pa.Schema, use_emulator:bool = False):
         self._base_path = base_path
         self._schema = schema
         self._use_emulator = use_emulator
+        # --- BEST PRACTICE --- Initialize the client as an instance variable
+        self._gcs_client = None
 
     def setup(self):
-        # Initialize client once per worker (not per bundle)
-        if "STORAGE_EMULATOR_HOST" in os.environ:
-            del os.environ["STORAGE_EMULATOR_HOST"]
-        with WriteWindowedBatchToGCS._client_lock:
-            if WriteWindowedBatchToGCS._gcs_client is None:
-                if self._use_emulator:
-                    # For emulator use
-                    WriteWindowedBatchToGCS._gcs_client = gcsio.GcsIO(
-                        client_options={"api_endpoint": "http://localhost:4443"}
-                    )
-                else:
-                    # For production GCS
-                    WriteWindowedBatchToGCS._gcs_client = gcsio.GcsIO()
+        """Initializes a GCS client for each DoFn instance."""
+        # This setup method is called once per DoFn instance on each worker.
+        # Beam ensures this is thread-safe, so we don't need our own lock.
+        if self._gcs_client is None:
+            if self._use_emulator:
+                # For emulator use
+                logging.info("Initializing GCS client for emulator.")
+                self._gcs_client = gcsio.GcsIO(
+                    client_options={"api_endpoint": "http://localhost:4443"}
+                )
+            else:
+                # For production GCS
+                logging.info("Initializing GCS client for production.")
+                self._gcs_client = gcsio.GcsIO()
 
     def process(
         self, element: tuple, window=beam.DoFn.WindowParam
     ):
-        key, records_iterable = element
+        """
+        Processes a single group of records (from one key) and writes them to GCS.
+        Yields failed batches to a dead-letter output.
+        """
+        # The fan-out key's job is done (it distributed the load). We only need the records.
+        # The key itself isn't needed here because the UUID ensures a unique filename.
+        _fanout_key, records_iterable = element
         records_list = list(records_iterable)
 
         if not records_list:
             return
 
-        window_end = window.end.to_utc_datetime() # We use the end time stamp to make sure that no data is written to a directory at the same time it is being worked on by spark.
+        window_end = window.end.to_utc_datetime()
         partition_path = f"year={window_end.year}/month={window_end.month:02d}/day={window_end.day:02d}/hour={window_end.hour:02d}"
-        full_path = f"{self._base_path.rstrip('/')}/{partition_path}/data-{uuid.uuid4()}.parquet"
+        
+        # The UUID is critical for allowing parallel writes.
+        unique_filename = f"data-{uuid.uuid4()}.parquet"
+        full_path = f"{self._base_path.rstrip('/')}/{partition_path}/{unique_filename}"
 
         logging.info(
-            f"Writing {len(records_list)} records for window {window_end} to {full_path}"
+            f"Writing {len(records_list)} records for key '{_fanout_key}' in window {window_end} to {full_path}"
         )
         try:
             table = pa.Table.from_pylist(records_list, schema=self._schema)
             buf = pa.BufferOutputStream()
             pq.write_table(table, buf)
             parquet_data = buf.getvalue().to_pybytes()
-            with WriteWindowedBatchToGCS._gcs_client.open(full_path, "wb") as f:
+            
+            # Use the instance-level client
+            with self._gcs_client.open(full_path, "wb") as f:
                 f.write(parquet_data)
 
             logging.info(f"Successfully wrote to {full_path}")
+
         except Exception as e:
-            logging.error(f"Failed to write Parquet file to {full_path}: {e}")
+            # Instead of just logging and dropping the data, we emit it to a side output.
+            logging.error(f"Failed to write Parquet file to {full_path}: {e}. Outputting to DLQ.")
+            
+            # We convert the list of dictionaries to a JSON string for easy storage in a text file.
+            failed_batch_json = json.dumps(records_list, default=str)
+            yield beam.pvalue.TaggedOutput(failed_gcs_write_tag, failed_batch_json)
