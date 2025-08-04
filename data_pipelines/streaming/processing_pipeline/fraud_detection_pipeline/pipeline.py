@@ -127,7 +127,7 @@ def build(options: FraudDetectionPipelineOptions):
         )
     )
 
-    # --- Step 4: ML Processing with Dead-Lettering ---
+    # Step 4: ML Processing with Dead-Lettering ---
     prediction_results = (
         parsed_transactions
         | "AddMLFanoutKey" >> beam.ParDo(transforms.AddRandomKey(2))
@@ -149,7 +149,7 @@ def build(options: FraudDetectionPipelineOptions):
     successful_predictions = prediction_results.successful_predictions
     failed_batches = prediction_results[transforms.failed_processing_tag]
 
-    # --- Step 5: Dead-Letter Sink for Processing Failures (SIMPLIFIED & ENABLED) ---
+    # Step 5: Dead-Letter Sink for Processing Failures 
     (
         failed_batches
         | "FailedBatchToString"
@@ -188,13 +188,42 @@ def build(options: FraudDetectionPipelineOptions):
     )
 
     # Continue the main pipeline path
+    # (
+    #     formatted_transactions
+    #     | "Serialize to JSON" >> beam.Map(lambda elem: json.dumps(elem))
+    #     | "Encode to Bytes" >> beam.Map(lambda s: s.encode("utf-8"))
+    #     | "Publish Scored Transaction" >> WriteToPubSub(topic=options.output_topic)
+    # )
+
     (
         formatted_transactions
-        | "Serialize to JSON" >> beam.Map(lambda elem: json.dumps(elem))
-        | "Encode to Bytes" >> beam.Map(lambda s: s.encode("utf-8"))
-        | "Publish Scored Transaction" >> WriteToPubSub(topic=options.output_topic)
-    )
+        # Step 1: Add a key to each element to allow for batching.
+        # Using a constant key (e.g., 1) groups all elements together, but for
+        # parallelism, a random key might be better if the volume is very high.
+        # For simplicity, we'll use a constant key.
+        | "AddKeyForPubSubBatching" >> beam.ParDo(transforms.AddRandomKey(2))
 
+        # Step 2: Group the keyed elements into batches.
+        # This creates batches of up to 100 elements or waits a maximum of 5 seconds.
+        # You should tune these values for your specific needs.
+        | "GroupIntoPubSubBatches" >> beam.GroupIntoBatches(options.ml_batch_size, options.allowed_wait_time_seconds)
+
+        # Step 3: At this point, we have a PCollection of (key, [list_of_elements]).
+        # We only want the list of elements for our payload.
+        | "ExtractBatchList" >> beam.Map(lambda key_value_tuple: key_value_tuple[1])
+
+        # Step 4: Serialize the entire list (the batch) into a single JSON string.
+        # The output will be a string like: '[{"tx_1"}, {"tx_2"}, ...]'
+        | "Serialize Batch to JSON" >> beam.Map(lambda batch_list: json.dumps(batch_list))
+
+        # Step 5: Encode the single JSON string to bytes for Pub/Sub.
+        | "Encode Batch to Bytes" >> beam.Map(lambda json_string: json_string.encode("utf-8"))
+
+        # Step 6: Publish the byte string. Each byte string now represents an entire
+        # batch and will be published as a single Pub/Sub message.
+        | "Publish Scored Batch" >> WriteToPubSub(topic=options.output_topic)
+    )
+    
     # Step 6: The "happy path" analytics write
     grouped_data = (
         successful_predictions

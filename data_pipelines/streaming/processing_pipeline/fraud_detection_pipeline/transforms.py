@@ -192,13 +192,10 @@ class PredictFraudBatchDoFn(beam.DoFn):
 
         except requests.exceptions.RequestException as e:
             logging.error(f"HTTP request to model server failed after retries: {e}")
-            if response.status_code == 422:
-                yield beam.pvalue.TaggedOutput(failed_processing_tag, {"model_422":transaction_batch, "details": str(response.content)})
-            else:
-                yield beam.pvalue.TaggedOutput(failed_processing_tag, {"request_failed":transaction_batch,"details": str(response.content)})
+            yield beam.pvalue.TaggedOutput(failed_processing_tag, {"request_failed":transaction_batch})
         except Exception as e:
             logging.error(f"An unexpected error occurred in PredictFraudBatchDoFn: {e}", exc_info=True)
-            yield beam.pvalue.TaggedOutput(failed_processing_tag, {"request_failed":transaction_batch})
+            yield beam.pvalue.TaggedOutput(failed_processing_tag, {"Error occured":transaction_batch})
 
     def _enrich_transaction(self, tx: Dict, user_data: Dict, merchant_data: Dict) -> Dict:
         """Enriches a single transaction with derived features. This function is now safe from side effects."""
