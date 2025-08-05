@@ -5,20 +5,7 @@
 
 This repository contains the complete source code and documentation for a scalable, real-time fraud detection system built on the Google Cloud Platform (GCP). The project is designed to ingest raw transaction events, enrich them with historical data in real-time, score them using a machine learning model, and take appropriate action, all within seconds. The architecture leverages a modern data stack, combining streaming and batch processing to create a robust and resilient pipeline that feeds a central Data Warehouse (DWH) for analytics and continuous model improvement.
 
-### **Table of Contents**
-
-1.  **Introduction**
-2.  **Project Objectives**
-3.  **System Architecture**
-4.  **Core Design Concepts**
-5.  **Tech Stack, Services & Frameworks**
-6.  **Codebase & Pipeline Components**
-7.  **The Hot Path: Real-Time Transaction Scoring**
-8.  **The Cold Path: Analytics and Feature Engineering**
-9.  **Automation: Infrastructure and Deployment**
-10. **Future Work**
-11. **License**
-
+***
 
 ##  📖 Introduction
 
