@@ -105,7 +105,7 @@ python3 "${MAIN_SCRIPT_PATH}" \
   --parse_dlq_path "${DLQ_PATH}/parsing_dlq/" \
   --processing_dlq_path "${DLQ_PATH}/processing_dlq/" \
   --model_endpoint_url "${MODEL_ENDPOINT_URL}"\
-  --worker_machine_type "n1-standard-2" \
+  --worker_machine_type "custom-2-2048" \
   --max_num_workers "10" \
   --streaming &
 

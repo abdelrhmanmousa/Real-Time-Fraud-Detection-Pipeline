@@ -71,6 +71,7 @@ async def process_pubsub_batch(envelope: PubSubEnvelope):
             fraud_score = float(transaction.get("is_fraud_prediction", 0.0))
             tx_id = transaction.get("transaction_id", "N/A")
             user_id = transaction.get("user_id", "N/A")
+            tx_timestamp = transaction.get("timestamp", "N/A")
 
             if fraud_score > FRAUD_THRESHOLD:
                 # Construct the structured log payload for a high-risk transaction
@@ -79,6 +80,7 @@ async def process_pubsub_batch(envelope: PubSubEnvelope):
                     "status": "TRANSACTION_FLAGGED",
                     "severity": "WARNING", # Explicitly set for clarity and filtering
                     "transaction_id": tx_id,
+                    "srouce_timestamp": tx_timestamp,
                     "user_id": user_id,
                     "fraud_score": fraud_score,
                     "merchant_id": transaction.get("merchant_id"),
@@ -94,6 +96,8 @@ async def process_pubsub_batch(envelope: PubSubEnvelope):
                     "status": "TRANSACTION_PROCESSED_OK",
                     "severity": "INFO",
                     "transaction_id": tx_id,
+                    "srouce_timestamp": tx_timestamp,
+                    "user_id": user_id,
                     "fraud_score": fraud_score
                 }
                 logging.info(log_payload)
