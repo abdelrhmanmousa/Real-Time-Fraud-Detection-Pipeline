@@ -106,8 +106,12 @@ python3 "${MAIN_SCRIPT_PATH}" \
   --processing_dlq_path "${DLQ_PATH}/processing_dlq/" \
   --model_endpoint_url "${MODEL_ENDPOINT_URL}"\
   --worker_machine_type "custom-2-2048" \
+  --worker_zone "${REGION}-a" \
   --max_num_workers "10" \
   --streaming &
+
+
+  # --worker_machine_type "n1-standard-2" \
 
 echo ""
 echo ">>>  Deployment command sent successfully!"

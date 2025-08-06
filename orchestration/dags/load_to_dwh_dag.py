@@ -18,7 +18,7 @@ GCP_REGION = Variable.get("gcp_dataproc_region", "us-central1")
 GCP_CONN_ID = "google_cloud_default"  # The name of your GCP connection in Airflow
 
 DATAPROC_TEMPLATE_ID = Variable.get("dataproc_transactions_template_id", "spark-fraud-template")
-GCS_BUCKET = Variable.get("transactions_gcs_bucket", "your-source-bucket-name") # Just the bucket name
+GCS_BUCKET = Variable.get("transactions_input_gcs_bucket", "your-source-bucket-name") # Just the bucket name
 INPUT_GCS_PREFIX = Variable.get("transactions_input_gcs_prefix", "transactions/raw") # Path inside bucket
 OUTPUT_DATASET = Variable.get("transactions_output_dataset", "fraud_detection_dwh")
 BQ_TEMP_BUCKET = Variable.get("transactions_bq_temp_bucket", "your-bq-temp-bucket")
@@ -57,7 +57,7 @@ with DAG(
     schedule="@hourly",
     catchup=False,
     default_args=default_args,
-    sla=pendulum.duration(minutes=45), # Trigger an alert if the DAG run exceeds 45 mins
+    # sla=pendulum.duration(minutes=45), # Trigger an alert if the DAG run exceeds 45 mins
     tags=["dataproc", "etl", "transactions", "production"],
 ) as dag:
     start = EmptyOperator(task_id="start")
@@ -69,8 +69,9 @@ with DAG(
             task_id="check_source_data_exists",
             bucket=GCS_BUCKET,
             # Dynamically build the prefix for the specific hour
-            prefix=f"{INPUT_GCS_PREFIX}/year={{{{ data_interval_start.strftime('%Y') }}}}/month={{% raw %}}{{{{ data_interval_start.strftime('%m') }}}}{{% endraw %}}/day={{% raw %}}{{{{ data_interval_start.strftime('%d') }}}}{{% endraw %}}/hour={{% raw %}}{{{{ data_interval_start.strftime('%H') }}}}{{% endraw %}}/",
-            gcp_conn_id=GCP_CONN_ID,
+            # prefix=f"{INPUT_GCS_PREFIX}/year={{{{ data_interval_start.strftime('%Y') }}}}/month={{% raw %}}{{{{ data_interval_start.strftime('%m') }}}}{{% endraw %}}/day={{% raw %}}{{{{ data_interval_start.strftime('%d') }}}}{{% endraw %}}/hour={{% raw %}}{{{{ data_interval_start.strftime('%H') }}}}{{% endraw %}}/",
+            prefix=f"{INPUT_GCS_PREFIX}/year={{{{ data_interval_start.strftime('%Y') }}}}/month={{{{ data_interval_start.strftime('%m') }}}}/day={{{{ data_interval_start.strftime('%d') }}}}/hour={{{{ data_interval_start.strftime('%H') }}}}/",
+            google_cloud_conn_id=GCP_CONN_ID,
             mode='poke',
             poke_interval=60, # Check every 60 seconds
             timeout=300,      # Timeout after 5 minutes
@@ -103,7 +104,7 @@ with DAG(
                 SELECT COUNT(*)
                 FROM `{GCP_PROJECT_ID}.{OUTPUT_DATASET}.Fact_Transactions`
                 WHERE
-                    TIMESTAMP_TRUNC(transaction_timestamp, HOUR) = '{{{{ data_interval_start }}}}'
+                    TIMESTAMP_TRUNC(transaction_timestamp, HOUR) = TIMESTAMP_TRUNC(TIMESTAMP('{{{{ data_interval_start.isoformat() }}}}'), HOUR)
             """,
             # The operator will pass if the first cell of the first row is > 0
         )

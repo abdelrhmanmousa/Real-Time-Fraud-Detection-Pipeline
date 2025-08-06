@@ -1,117 +1,3 @@
-# from __future__ import annotations
-# import pendulum
-# from airflow.models.dag import DAG
-# from airflow.models.variable import Variable
-# from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
-# from airflow.providers.google.cloud.operators.gcs import (
-#     GCSDeleteObjectsOperator,
-#     GCSListObjectsOperator,
-# )
-# from airflow.providers.google.cloud.transfers.bigquery_to_gcs import (
-#     BigQueryToGCSOperator,
-# )
-# # Import our custom operator from the gcs_firestore plugin directory.
-# from gcs_firestore.operators.gcs_to_firestore import GCSToFirestoreOperator
-
-
-# # Dynamic Configuration from Airflow Variables 
-# try:
-#     GCP_PROJECT_ID = Variable.get("gcp_project_id")
-#     BQ_DATASET = Variable.get("bq_dataset")
-#     GCS_BUCKET_NAME = Variable.get("gcs_bucket_name")
-#     FIRESTORE_COLLECTION = Variable.get("firestore_collection")
-# except KeyError:
-#     GCP_PROJECT_ID = "local-dev-project"
-#     BQ_DATASET = "local_dev_dwh"
-#     GCS_BUCKET_NAME = "local-dev-bucket"
-#     FIRESTORE_COLLECTION = "local-dev-users"
-
-
-# FIRESTORE_USERS_DATA_SCHEMA = {
-#     "user_account_age_days": int,
-#     "user_home_lat": float,
-#     "user_home_long": float,
-#     "user_avg_tx_amount_30d": float,
-#     "user_max_distance_from_home_90d": float,
-#     "user_num_distinct_countries_6m": int,
-#     "user_tx_count_24h": int,
-#     "user_failed_tx_count_1h": int,
-#     "user_num_distinct_mcc_24h": int,
-# }
-
-# # Configuration
-# GCP_CONN_ID = "google_cloud_default"
-# DESTINATION_TABLE = "For_Firestore_Users_Recalculated"
-
-# GCS_OBJECT_PREFIX = "exports/{{ ds_nodash }}/firestore_users"
-
-
-# with DAG(
-#     dag_id="user_profile_export_and_load_to_firestore",
-#     schedule="0 3 * * *",
-#     start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
-#     template_searchpath="/opt/airflow/data/sql",
-#     catchup=False,
-#     tags=["bigquery", "gcs", "firestore"],
-#     description="Recalculates user profiles, exports to a date-partitioned GCS path, loads to Firestore, and cleans up.",
-# ) as dag:
-
-#     # Task 1: Run the templated SQL query to create the export table.
-#     create_export_table = BigQueryInsertJobOperator(
-#         project_id=GCP_PROJECT_ID,
-#         task_id="create_user_export_table",
-#         gcp_conn_id=GCP_CONN_ID,
-#         configuration={
-#             "query": {
-#                 "query": "get_users_historical_features.sql",
-#                 "useLegacySql": False,
-#             }
-#         },
-#         # This 'params' dictionary passes the variables to the Jinja templating engine for the SQL file.
-#         params={
-#             "project_id": GCP_PROJECT_ID,
-#             "dataset": BQ_DATASET,
-#         },
-#     )
-
-#     # Task 2: Export the newly created BigQuery table to the date-partitioned GCS path.
-#     export_table_to_gcs = BigQueryToGCSOperator(
-#         task_id="export_bq_table_to_gcs",
-#         gcp_conn_id=GCP_CONN_ID,
-#         source_project_dataset_table=f"{GCP_PROJECT_ID}.{BQ_DATASET}.{DESTINATION_TABLE}",
-#         destination_cloud_storage_uris=[
-#             f"gs://{GCS_BUCKET_NAME}/{GCS_OBJECT_PREFIX}-*.json"
-#         ],
-#         export_format="NEWLINE_DELIMITED_JSON",
-#     )
-
-#     # Task 3: List the specific files that were created in the date-partitioned folder.
-#     list_exported_files = GCSListObjectsOperator(
-#         task_id="list_exported_files",
-#         gcp_conn_id=GCP_CONN_ID,
-#         bucket=GCS_BUCKET_NAME,
-#         prefix=GCS_OBJECT_PREFIX,
-#     )
-
-#     # Task 4: Use our custom operator to load the files found by the list task.
-#     load_files_to_firestore = GCSToFirestoreOperator(
-#         task_id="load_files_to_firestore",
-#         source_task_id="list_exported_files",
-#         firestore_collection=FIRESTORE_COLLECTION,
-#         firestore_document_id_field="user_id",
-#         gcp_conn_id=GCP_CONN_ID,
-#         schema=FIRESTORE_USERS_DATA_SCHEMA,
-#     )
-
-#     # Define the DAG
-#     (
-#         create_export_table
-#         >> export_table_to_gcs
-#         >> list_exported_files
-#         >> load_files_to_firestore
-#     )
-
-
 from __future__ import annotations
 
 import pendulum
@@ -136,7 +22,7 @@ from gcs_firestore.operators.gcs_to_firestore import GCSToFirestoreOperator
 # Configuration 
 GCP_PROJECT_ID = Variable.get("gcp_project_id", default_var="local-dev-project")
 BQ_DATASET = Variable.get("bq_dataset", default_var="local_dev_dwh")
-GCS_BUCKET_NAME = Variable.get("gcs_bucket_name", default_var="local-dev-bucket")
+GCS_BUCKET_NAME = Variable.get("gcs_export_bucket_name", default_var="local-dev-bucket")
 
 # Variables for the USERS export process 
 USERS_FIRESTORE_COLLECTION = Variable.get("firestore_users_collection", "users")
@@ -190,7 +76,6 @@ with DAG(
     template_searchpath="/opt/airflow/data/sql", # Path for get_users_historical_features.sql
     catchup=False,
     default_args=default_args,
-    sla=pendulum.duration(hours=1),
     tags=["bigquery", "gcs", "firestore", "production"],
     doc_md="""
     ### DWH to Firestore Export
