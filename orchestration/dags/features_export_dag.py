@@ -73,7 +73,7 @@ with DAG(
     dag_id="dwh_export_to_firestore_v2",
     schedule="0 3 * * *", # Runs daily at 3:00 AM UTC
     start_date=pendulum.datetime(2025, 1, 1, tz="UTC"),
-    template_searchpath="/opt/airflow/data/sql", # Path for get_users_historical_features.sql
+    template_searchpath="/home/airflow/gcs/data/sql", # Path for get_users_historical_features.sql
     catchup=False,
     default_args=default_args,
     tags=["bigquery", "gcs", "firestore", "production"],

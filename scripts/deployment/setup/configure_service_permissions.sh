@@ -2,7 +2,7 @@ set -e
 set -u
 
 usage() {
-  echo "Usage: $0 --project-id <ID> --service <dataproc|dataflow>"
+  echo "Usage: $0 --project-id <ID> --service <dataproc|dataflow|composer>"
   echo "  Deploys permissions for a well-defined service by enforcing a naming convention."
   exit 1
 }
@@ -20,7 +20,6 @@ while [[ "$#" -gt 0 ]]; do
 done
 if [ -z "$PROJECT_ID" ] || [ -z "$SERVICE_TYPE" ]; then usage; fi
 
-
 # The script, not the caller, defines the names and roles.
 if [[ "${SERVICE_TYPE}" == "dataproc" ]]; then
   SA_NAME="dataproc-etl-runner"
@@ -36,8 +35,15 @@ elif [[ "${SERVICE_TYPE}" == "dataflow" ]]; then
     "roles/dataflow.admin" "roles/dataflow.worker" "roles/storage.objectAdmin"
     "roles/pubsub.admin" "roles/datastore.user" "roles/run.invoker"
   )
+elif [[ "${SERVICE_TYPE}" == "composer" ]]; then
+  SA_NAME="composer-airflow-sa"
+  SA_DISPLAY_NAME="Cloud Composer Airflow Service Account"
+  ROLES_TO_GRANT=(
+    "roles/composer.worker" "roles/storage.objectAdmin" "roles/dataproc.admin" "roles/bigquery.admin"
+    "roles/bigquery.user" "roles/datastore.user" "roles/cloudsql.client" "roles/iam.serviceAccountUser"
+  )
 else
-  echo "ERROR: Invalid service type '${SERVICE_TYPE}'. Must be 'dataproc' or 'dataflow'."
+  echo "ERROR: Invalid service type '${SERVICE_TYPE}'. Must be 'dataproc', 'dataflow', or 'composer'."
   exit 1
 fi
 
