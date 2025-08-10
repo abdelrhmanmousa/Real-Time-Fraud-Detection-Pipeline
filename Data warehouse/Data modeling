@@ -1,1 +1,22 @@
-D
+A. Why Did I Choose a Star Schema?
+Simplicity: The design is intuitive and easy for analysts to understand. It consists of a central Fact Table surrounded by descriptive Dimension Tables.
+Query Performance: Queries are significantly faster because they require fewer joins compared to a normalized (3NF) model. This is ideal for BI tools like Looker Studio.
+Easy Aggregation: The structure makes it very simple to perform aggregations like SUM(amount) or COUNT(transactions) across different dimensions like users, countries, or time.
+
+B. Components of Our Schema:
+Fact_Transactions (The Fact Table): This is the heart of the schema. It stores the core numerical measurements or "facts" like amount and account_balance. It also contains the Foreign Keys that link to the dimension tables.
+Key Optimization: "I've partitioned this fact table by the timestamp column. In BigQuery, this drastically improves query performance and reduces costs, especially when filtering for specific date ranges."
+Dimensions (The Dimension Tables): These tables provide the context—the "who, what, where, and when"—for our facts. Examples include Dim_Users, Dim_Cards, and Dim_Merchants.
+Key Detail: "In my project, these dimensions are considered static or slowly changing, so they don't need to be updated every hour with the fact table."
+
+C. The Power of Surrogate Keys (SKs)
+"You'll notice that every table has a Surrogate Key (e.g., User_SK) as its primary key. I implemented this for several critical reasons:
+Performance: Joining on integers (the SKs) is much faster than joining on natural business keys, which are often strings (like user_id or card_id).
+Decoupling from Source: If a user_id changes in the source system, our data warehouse remains stable because all internal relationships rely on the unchanging surrogate key.
+Tracking History: Surrogate keys are the foundation for implementing Slowly Changing Dimensions (SCDs), which allow us to track historical changes in our dimension data (e.g., if a user changes their address)."
+
+D. The Junk Dimension: A Smart Design Choice
+"In the source data, I had several boolean flags like is_weekend, is_night, and is_geo_ip_mismatch. Instead of adding 6-7 boolean columns to my massive fact table, I grouped them into a single, dedicated dimension called Dim_Transactions_Flags.
+Why? This technique, called a Junk Dimension, reduces the width of the fact table, making it smaller and more efficient.
+How? I created a unique surrogate key for every possible combination of these flags, as you can see in the enrichment code. This turns multiple columns into a single, clean foreign key in the fact table."
+
