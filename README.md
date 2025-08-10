@@ -61,7 +61,7 @@ Of course. Here is the "System Architecture" section, complete with a placeholde
 
 The following diagram provides a visual representation of the end-to-end fraud detection pipeline, illustrating the flow of data through both the real-time "hot path" and the analytical "cold path."
 
-![System Architecture Diagram](./docs/architecture-final.png)
+![System Architecture Diagram](./Architecture/Architecture.png)
 
 
 ### Architectural Overview
